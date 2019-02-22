@@ -93,9 +93,9 @@ ReferenceLocalization::ReferenceLocalization(ros::NodeHandle& nh)
 	std::vector<double> temp;
 	node_handle_.getParam("front_wall_polygon", temp);
 	const int num_points = temp.size()/2;
-	if (temp.size()%2 != 0 || temp.size() < 3*2)
+	if (temp.size()%2 != 0 || temp.size() < 4*2)
 	{
-		ROS_ERROR("ReferenceLocalization::ReferenceLocalization - The front_wall_polygon vector should contain at least 3 points with 2 values (x,y) each.");
+		ROS_ERROR("ReferenceLocalization::ReferenceLocalization - The front_wall_polygon vector should contain at least 4 points with 2 values (x,y) each.");
 		return;
 	}
 	std::cout << "Front wall polygon points:\n";
@@ -103,32 +103,6 @@ ReferenceLocalization::ReferenceLocalization(ros::NodeHandle& nh)
 	{
 		front_wall_polygon_.push_back(cv::Point2f(temp[2*i], temp[2*i+1]));
 		std::cout << temp[2*i] << "\t" << temp[2*i+1] << std::endl;
-	}
-
-	// read rotation compensation, when base x-axis is not pointing towards front wall
-	temp.clear();
-	node_handle_.getParam("base_rotation_compensation_ypr", temp);
-
-	if ( temp.size() == 3 )
-	{
-		tf::Matrix3x3 tf_rot;
-		tf_rot.setEulerYPR(temp[0], temp[1], temp[2]);
-		tf_rot.getRotation(base_rot_compensation_);
-		tf::Vector3 rows[3];
-		rows[0] = tf_rot.getRow(0);
-		rows[1] = tf_rot.getRow(1);
-		rows[2] = tf_rot.getRow(2);
-		T_base_rot_compensation_ = ( cv::Mat_<double>(4,4) <<
-												rows[0].getX(), rows[0].getY(), rows[0].getZ(), 0.,
-												rows[1].getX(), rows[1].getY(), rows[1].getZ(), 0.,
-												rows[2].getX(), rows[2].getY(), rows[2].getZ(), 0.,
-												0,				0,				0,				1. );
-	}
-	else
-	{
-		base_rot_compensation_.setRPY(0., 0., 0.);
-		T_base_rot_compensation_ = cv::Mat::eye(4,4,CV_64FC1);
-		ROS_WARN("ReferenceLocalization::ReferenceLocalization - base_rotation_compensation_ypr has wrong size: %d, expected 3", (int)temp.size());
 	}
 
 	// publishers
@@ -285,7 +259,6 @@ bool ReferenceLocalization::assignPolygonFrame()
 	{
 		transform_listener_.waitForTransform(reference_frame_, base_frame_, ros::Time(0), ros::Duration(1.0));
 		transform_listener_.lookupTransform(reference_frame_, base_frame_, ros::Time(0), ref_to_base_initial_);
-		//ref_to_base_initial_.setRotation(base_rot_compensation_);  // compensate base rotation
 		return true;
 	}
 	catch (tf::TransformException& ex)
@@ -311,13 +284,22 @@ bool ReferenceLocalization::applyPolygonFilters(const sensor_msgs::LaserScan::Co
 		ROS_WARN("CornerLocalization::applyPolygonFilters - Could not determine transform between laser scanner and %s.", base_frame_.c_str());
 		return false;
 	}
-	cv::Mat T_polygon_to_laser;
-	received_transform = RelativeLocalizationUtilities::getTransformAdv(transform_listener_, polygon_frame_, std::string(laser_scan_msg->header.frame_id), base_frame_, T_polygon_to_laser, publish_time_, ros::Time(0.f));
+
+	cv::Mat T_polygon_to_base;
+	received_transform = RelativeLocalizationUtilities::getTransform(transform_listener_, polygon_frame_, base_frame_, T_polygon_to_base);
+	if (received_transform==false)
+	{
+		ROS_WARN("CornerLocalization::applyPolygonFilters - Could not determine transform between %s and %s.", polygon_frame_.c_str(), base_frame_.c_str());
+		return false;
+	}
+	cv::Mat T_polygon_to_laser = T_polygon_to_base*T_base_to_laser;
+
+	/*received_transform = RelativeLocalizationUtilities::getTransformAdv(transform_listener_, polygon_frame_, std::string(laser_scan_msg->header.frame_id), base_frame_, T_polygon_to_laser, publish_time_, ros::Time(0.f));
 	if (received_transform==false)
 	{
 		ROS_WARN("CornerLocalization::applyPolygonFilters - Could not determine transform between laser scanner and %s.", polygon_frame_.c_str());
 		return false;
-	}
+	}*/
 
 	// retrieve points from side and front wall and put each of those in separate lists
 	// scan_X vectors are relative to the base_frame, but the detection part (valid laserscanner points) is relative to the detection_base_frame
@@ -326,11 +308,11 @@ bool ReferenceLocalization::applyPolygonFilters(const sensor_msgs::LaserScan::Co
 		double angle = laser_scan_msg->angle_min + i * laser_scan_msg->angle_increment; // [rad]
 		double dist = laser_scan_msg->ranges[i]; // [m]
 
-		// transform laser scanner points to polygon_frame_
+		// transform laser scanner points to polygon_frame and base_frame
 		cv::Mat point_laser(cv::Vec4d(dist*cos(angle), dist*sin(angle), 0, 1.0));
 		cv::Mat point_polygon = T_polygon_to_laser*point_laser;  // laserscanner points in detection_base_frame coordinates
 		cv::Point2f point_2d_polygon(point_polygon.at<double>(0), point_polygon.at<double>(1));
-		cv::Mat point_base = /*T_base_rot_compensation_**/T_base_to_laser*point_laser;  // laserscanner point in base_frame coords
+		cv::Mat point_base = T_base_to_laser*point_laser;  // laserscanner point in base_frame coords
 		cv::Point2f point_2d_base(point_base.at<double>(0), point_base.at<double>(1));
 
 		// check if point is inside front wall polygon and push to scan_front if that's the case

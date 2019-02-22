@@ -7,7 +7,7 @@
 # This can lead to collision issues for some cameras (e.g. when attached to an arm). Setting it to 0 turns it off (only recommended for pan/tilt cameras)
 cameras_list: ["realsense_sr300", "6", "0"] #["ids_ueye", "2", "0"]
 
-# ranges for the degrees of freedom of the robot
+# ranges for the degrees of freedom of the robot, relative to reference_frame
 # each parameter is set as [min_value, step, max_value]
 # vector<double>
 x_range: [-2.2, 0.2, -1.6]       # in [m]
@@ -28,17 +28,21 @@ ids_ueye_ranges: [-2.4, 0.4, -1.6,
 realsense_sr300_configs: [-0.816926, -0.518052, -2.47831, -1.72319, -1.68554, -0.10491,
 -0.616926, -0.518052, -2.47831, -1.7232, -1.68554, -0.104886]
 
-# list of robot's base configurations used in calibration for observing the pitags measured relative to the landmark_reference_nav coordinate system that is similarly aligned as the robot's base_link
+# list of robot's base configurations used in calibration for observing the pitags measured relative to the reference_frame coordinate system that is similarly aligned as the robot's base_link
 # each base configuration will go through every camera's configuration
 # vector<double>
 base_configs: []
 
-# the robot base frame, needed for security measure (it's the reference frame to check the child_frame against before moving the robot)
+# the robot's base moves until base_frame is correctly aligned relative to the reference_frame as given in the base configurations
 base_frame: "base_link"
 
-# The name of the reference frame. Has to match the entry found in the relative_localization yaml files.
+# the name of the detected reference frame. Should match the entry found in the relative_localization yaml files.
 # string
 reference_frame: "/landmark_reference_nav"
+
+# controller error (between reference_frame and base_frame) will be transformed in the controller_frame before being applied to the motors
+# string
+controller_frame: "base_link"
 
 # max distance (radius) the referenece_frame is allowed to be away in terms of the robot's base_frame
 # double
