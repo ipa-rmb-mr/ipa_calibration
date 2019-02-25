@@ -320,7 +320,7 @@ unsigned short CameraLaserscannerType::moveBase(const pose_definition::RobotConf
 	unsigned short error_code = MOV_NO_ERR;
 	bool start_value = true; // for divergence detection, initialization
 
-	// control robot angle
+	// control robot angle (robot rotation is assumed to be around z-axis)
 	do
 	{
 		if (!isReferenceFrameValid(T, error_code))
@@ -333,7 +333,6 @@ unsigned short CameraLaserscannerType::moveBase(const pose_definition::RobotConf
 		double robot_yaw = ypr.val[0];
 		geometry_msgs::Twist tw;
 		double error_phi = base_configuration.pose_phi_ - robot_yaw;
-		transformControllerErrorRot(error_phi);
 
 		while (error_phi < -CV_PI*0.5)
 			error_phi += CV_PI;
@@ -371,7 +370,7 @@ unsigned short CameraLaserscannerType::moveBase(const pose_definition::RobotConf
 		geometry_msgs::Twist tw;
 		double error_x = base_configuration.pose_x_ - T.at<double>(0,3);
 		double error_y = base_configuration.pose_y_ - T.at<double>(1,3);
-		transformControllerErrorPos(T.inv(), error_x, error_y);
+		transformControllerErrorPos(error_x, error_y);
 
 		if ((fabs(error_x) < 0.01 && fabs(error_y) < 0.01) || !ros::ok())
 			break;
@@ -406,7 +405,6 @@ unsigned short CameraLaserscannerType::moveBase(const pose_definition::RobotConf
 		double robot_yaw = ypr.val[0];
 		geometry_msgs::Twist tw;
 		double error_phi = base_configuration.pose_phi_ - robot_yaw;
-		transformControllerErrorRot(error_phi);
 
 		while (error_phi < -CV_PI*0.5)
 			error_phi += CV_PI;
@@ -479,10 +477,10 @@ bool CameraLaserscannerType::isReferenceFrameValid(cv::Mat &T, unsigned short& e
 }
 
 // transform position error from base_frame to controller_frame
-bool CameraLaserscannerType::transformControllerErrorPos(const cv::Mat &T_base_to_ref, double &error_x, double &error_y)
+bool CameraLaserscannerType::transformControllerErrorPos(double &error_x, double &error_y)
 {
-	cv::Mat T_ctrl_to_base;
-	if ( !transform_utilities::getTransform(transform_listener_, controller_frame_, base_frame_, T_ctrl_to_base, true) )  // trafo from controller_frame to base_frame
+	cv::Mat T_ctrl_to_ref;
+	if ( !transform_utilities::getTransform(transform_listener_, controller_frame_, reference_frame_, T_ctrl_to_ref, true) )  // trafo from controller_frame to reference_frame
 	{
 		error_x = 0;
 		error_y = 0;
@@ -490,38 +488,12 @@ bool CameraLaserscannerType::transformControllerErrorPos(const cv::Mat &T_base_t
 	}
 
 	cv::Mat error_ref = cv::Mat(cv::Vec4d(error_x, error_y, 0, 1));  // error in reference_frame coordinates
-	cv::Mat error_base = T_base_to_ref*error_ref;  // error in base_frame coords
-	/*cv::Mat rot_ctrl_base = (cv::Mat_<double>(3,3) <<
-					T_ctrl_to_base.at<double>(0,0), T_ctrl_to_base.at<double>(0,1), T_ctrl_to_base.at<double>(0,2),
-					T_ctrl_to_base.at<double>(1,0), T_ctrl_to_base.at<double>(1,1), T_ctrl_to_base.at<double>(1,2),
-					T_ctrl_to_base.at<double>(2,0), T_ctrl_to_base.at<double>(2,1), T_ctrl_to_base.at<double>(2,2));*/  // rotation from reference_frame to base_frame
-	T_ctrl_to_base.at<double>(0,3) = 0;
-	T_ctrl_to_base.at<double>(1,3) = 0;  // zero out translation
-	T_ctrl_to_base.at<double>(2,3) = 0;
-	cv::Mat error_ctrl = T_ctrl_to_base * error_base;  // transform error into controller_frame, but do not consider the translation from controller_frame to base_frame
+	T_ctrl_to_ref.at<double>(0,3) = 0;
+	T_ctrl_to_ref.at<double>(1,3) = 0;  // zero out translation
+	T_ctrl_to_ref.at<double>(2,3) = 0;
+	cv::Mat error_ctrl = T_ctrl_to_ref * error_ref;  // transform error into controller_frame, but do not consider the translation from controller_frame to base_frame
 	error_x = error_ctrl.at<double>(0);
 	error_y = error_ctrl.at<double>(1);
-	return true;
-}
-
-// transform rotation error from base_frame to controller_frame
-// this just takes into account the rotation around the z-axis
-bool CameraLaserscannerType::transformControllerErrorRot(double &error_phi)
-{
-	cv::Mat T_ctrl_to_ref;
-	if ( !transform_utilities::getTransform(transform_listener_, controller_frame_, reference_frame_, T_ctrl_to_ref, true) )  // trafo from controller_frame to reference_frame
-	{
-		error_phi = 0;
-		return false;
-	}
-
-	cv::Mat error_ref = cv::Mat(cv::Vec3d(0, 0, error_phi));  // error in reference_frame coordinates
-	cv::Mat rot_ctrl_ref = (cv::Mat_<double>(3,3) <<
-					T_ctrl_to_ref.at<double>(0,0), T_ctrl_to_ref.at<double>(0,1), T_ctrl_to_ref.at<double>(0,2),
-					T_ctrl_to_ref.at<double>(1,0), T_ctrl_to_ref.at<double>(1,1), T_ctrl_to_ref.at<double>(1,2),
-					T_ctrl_to_ref.at<double>(2,0), T_ctrl_to_ref.at<double>(2,1), T_ctrl_to_ref.at<double>(2,2));  // rotation from controller_frame to base_frame
-	cv::Mat error_ctrl = rot_ctrl_ref * error_ref;  // transform error into controller_frame
-	error_phi = error_ctrl.at<double>(2);
 	return true;
 }
 

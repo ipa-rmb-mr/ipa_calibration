@@ -82,8 +82,7 @@ protected:
     bool divergenceDetectedRotation(double error_phi, bool start_value);  // rotation controller diverges!
     bool divergenceDetectedLocation(double error_x, double error_y, bool start_value);  // location controller diverges!
     void turnOffBaseMotion();  // set angular and linear speed to 0
-	bool transformControllerErrorPos(const cv::Mat &T_base_to_ref, double &error_x, double &error_y);  // transform position error to controller_frame
-	bool transformControllerErrorRot(double &error_phi);  // transform rotation error to controller_frame
+	bool transformControllerErrorPos(double &error_x, double &error_y);  // transform position error to controller_frame
 
     double ref_frame_history_[REF_FRAME_HISTORY_SIZE]; // History of base_frame to reference_frame squared lengths, used to get average squared length. Holds last <REF_FRAME_HISTORY_SIZE> measurements.
     double max_ref_frame_distance_;
